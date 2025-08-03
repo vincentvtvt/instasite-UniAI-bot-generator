@@ -1,282 +1,243 @@
-// server.js - Optimized for Render deployment
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
-require('dotenv').config();
+const fs = require('fs');
 
 const app = express();
+const PORT = process.env.PORT || 10000;
 
 // Middleware
 app.use(cors());
-app.use(express.json({ limit: '10mb' }));
+app.use(express.json());
 app.use(express.static('public'));
 
-// Environment variables
-const CLAUDE_API_KEY = process.env.CLAUDE_API_KEY;
-const WASSENGER_TOKEN = process.env.WASSENGER_TOKEN;
-const WHATSAPP_PHONE = process.env.WHATSAPP_PHONE || '60127998080';
-const PORT = process.env.PORT || 3000;
-
-// In-memory storage (for demo - use database in production)
+// In-memory storage (replace with database in production)
 const userSessions = new Map();
-const MAX_SESSIONS_PER_USER = 50;
+const botSubmissions = [];
 
-// Health check endpoint
-app.get('/health', (req, res) => {
+// Mock AI response function (replace with real AI API)
+function generateAIResponse(message, config, history) {
+    const msg = message.toLowerCase();
+    const businessName = config.businessName;
+    const botName = config.botName.split(' - ')[0] || config.botName;
+    const businessType = config.businessType;
+    const services = config.services ? config.services.split('\n').filter(s => s.trim()) : [];
+    
+    // First interaction
+    if (history.length === 0) {
+        return `Hello! I'm ${botName} from ${businessName}. I'm here to help you with our ${businessType}. What's brought you to reach out to us today?`;
+    }
+    
+    // Greeting responses
+    if (msg.includes('hello') || msg.includes('hi') || msg.includes('hey') || msg === 'hi') {
+        return `Hello! It's great to hear from you! I'm ${botName}, and I'm here to help you with everything related to our ${businessType} at ${businessName}. How can I assist you today?`;
+    }
+    
+    // Service inquiries
+    if (msg.includes('service') || msg.includes('what do you') || msg.includes('offer') || msg.includes('do you have') || msg.includes('what can') || msg.includes('what')) {
+        if (services.length > 0) {
+            let response = `At ${businessName}, we specialize in ${businessType}. Here's what we offer:\n\n`;
+            services.slice(0, 5).forEach(service => {
+                const cleanService = service.replace(/^\*\*.*?\*\*/, '').trim();
+                if (cleanService) {
+                    response += `• ${cleanService}\n`;
+                }
+            });
+            if (services.length > 5) response += '• And more...\n';
+            response += `\nBased on what you've shared, which of these interests you most?`;
+            return response;
+        } else {
+            return `At ${businessName}, we specialize in ${businessType}. I'd be happy to discuss our services with you in detail. What specific area are you most interested in?`;
+        }
+    }
+    
+    // Pricing inquiries
+    if (msg.includes('price') || msg.includes('cost') || msg.includes('how much') || msg.includes('pricing') || msg.includes('fee')) {
+        if (services.length > 0) {
+            let response = `Here are our current rates:\n\n`;
+            const pricedServices = services.filter(s => s.includes('RM') || s.includes('$') || s.includes('USD'));
+            if (pricedServices.length > 0) {
+                pricedServices.slice(0, 6).forEach(service => {
+                    const cleanService = service.replace(/^\*\*.*?\*\*/, '').trim();
+                    if (cleanService) {
+                        response += `• ${cleanService}\n`;
+                    }
+                });
+            } else {
+                response += `I'd be happy to discuss pricing for our ${businessType} services.\n`;
+            }
+            response += `\nTo help me recommend the best option for you, what specific area would you like to focus on?`;
+            return response;
+        } else {
+            return `I'd be happy to discuss our pricing for ${businessType}. To give you the most accurate quote, could you tell me what specific service you're interested in?`;
+        }
+    }
+    
+    // Booking inquiries
+    if (msg.includes('book') || msg.includes('appointment') || msg.includes('schedule') || msg.includes('available') || msg.includes('when')) {
+        return `I'd be happy to help you schedule an appointment! Our working hours are ${config.workingHours || 'Monday-Sunday, 10am-8pm'}.\n\nTo get you set up, I'll need to know:\n• Which service interests you most\n• What specific goals you have\n• Your preferred timing\n\nLet's start - which service caught your attention?`;
+    }
+    
+    // Positive responses
+    if (msg.includes('yes') || msg.includes('sure') || msg.includes('okay') || msg.includes('ok') || msg.includes('interested')) {
+        const lastBotMessage = history.length > 0 ? history[history.length - 1].content : '';
+        
+        if (lastBotMessage.includes('pricing') || lastBotMessage.includes('rates')) {
+            return `Perfect! Let me share more details about our pricing and help you choose the right service. What specific area are you most interested in addressing?`;
+        }
+        
+        if (lastBotMessage.includes('service') || lastBotMessage.includes('offer')) {
+            return `Wonderful! I'd love to match you with the perfect service. Could you tell me more about what specific challenges or goals you're working on?`;
+        }
+        
+        return `Great! I'm excited to help you. To ensure I recommend the best approach for your situation, could you share a bit more about what you're hoping to achieve?`;
+    }
+    
+    // Problem descriptions
+    if (msg.includes('problem') || msg.includes('issue') || msg.includes('challenge') || msg.includes('help') || msg.includes('need') || msg.includes('difficult')) {
+        return `I understand, and you're in the right place. Many of our clients have faced similar challenges. Based on what you've shared, I believe our ${businessType} services could really help.\n\nWould you like me to explain which specific approach might work best for your situation?`;
+    }
+    
+    // Contact inquiries
+    if (msg.includes('where') || msg.includes('location') || msg.includes('address') || msg.includes('contact') || msg.includes('phone')) {
+        return `For specific location and contact details, I'd be happy to provide those once we determine the best service for you.\n\nRight now, I'd love to focus on understanding your needs better. What's the main thing you're hoping to resolve or achieve?`;
+    }
+    
+    // Thank you responses
+    if (msg.includes('thank') || msg.includes('thanks')) {
+        return `You're very welcome! I'm here to help you every step of the way. What else would you like to know about how we can assist you?`;
+    }
+    
+    // Discovery questions
+    if (config.discoveryQuestions && config.discoveryQuestions.trim()) {
+        const discoveryQuestions = config.discoveryQuestions.split('\n').filter(q => q.trim());
+        if (discoveryQuestions.length > 0) {
+            const randomQuestion = discoveryQuestions[Math.floor(Math.random() * discoveryQuestions.length)];
+            const cleanQuestion = randomQuestion.replace(/^-\s*/, '').trim();
+            return `That's really interesting! ${cleanQuestion}`;
+        }
+    }
+    
+    // Default responses
+    const defaultResponses = [
+        `That's really interesting. At ${businessName}, we help people with situations exactly like this through our ${businessType} approach. What outcome would be most valuable for you?`,
+        `I can definitely help with that! Many of our clients start with similar concerns. What would success look like for you in this area?`,
+        `Thank you for sharing that. Our ${businessType} services are designed to address exactly these kinds of situations. What's the most important change you'd want to see?`,
+        `I understand, and I believe we can help. At ${businessName}, we've supported many people through similar challenges. What's driving your interest in finding a solution now?`
+    ];
+    
+    return defaultResponses[Math.floor(Math.random() * defaultResponses.length)];
+}
+
+// API Routes
+
+// Get user session
+app.get('/api/session/:email', (req, res) => {
+    const { email } = req.params;
+    const session = userSessions.get(email) || { sessionCount: 0 };
+    console.log(`Getting session for ${email}:`, session);
+    res.json(session);
+});
+
+// Update user session
+app.post('/api/session', (req, res) => {
+    const { email, sessionCount } = req.body;
+    userSessions.set(email, { sessionCount });
+    console.log(`Updated session for ${email}:`, { sessionCount });
+    res.json({ success: true });
+});
+
+// Chat endpoint
+app.post('/api/chat', (req, res) => {
+    try {
+        const { message, config, history } = req.body;
+        console.log('Chat request:', { message, businessName: config?.businessName });
+        
+        if (!message || !config) {
+            return res.status(400).json({ error: 'Message and config are required' });
+        }
+        
+        const response = generateAIResponse(message, config, history || []);
+        console.log('Generated response:', response.substring(0, 100) + '...');
+        
+        res.json({ response });
+    } catch (error) {
+        console.error('Chat error:', error);
+        res.status(500).json({ error: 'Failed to generate response' });
+    }
+});
+
+// Submit bot configuration
+app.post('/api/submit-bot', (req, res) => {
+    try {
+        const botData = req.body;
+        botData.id = Date.now();
+        botData.submittedAt = new Date().toISOString();
+        
+        botSubmissions.push(botData);
+        console.log('Bot submitted:', { 
+            id: botData.id, 
+            businessName: botData.businessName,
+            botName: botData.botName 
+        });
+        
+        // Here you would typically:
+        // 1. Save to database
+        // 2. Send WhatsApp notification
+        // 3. Process the bot configuration
+        
+        res.json({ 
+            success: true, 
+            message: 'Bot submitted successfully!',
+            botId: botData.id 
+        });
+    } catch (error) {
+        console.error('Submit error:', error);
+        res.status(500).json({ error: 'Failed to submit bot' });
+    }
+});
+
+// Get all bot submissions (admin endpoint)
+app.get('/api/bots', (req, res) => {
+    res.json(botSubmissions);
+});
+
+// Health check
+app.get('/api/health', (req, res) => {
     res.json({ 
         status: 'healthy', 
         timestamp: new Date().toISOString(),
-        environment: process.env.NODE_ENV || 'development'
+        activeUsers: userSessions.size,
+        botSubmissions: botSubmissions.length
     });
 });
 
-// Serve main page
+// Serve the main HTML file
 app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-// Claude API endpoint with better error handling
-app.post('/api/claude', async (req, res) => {
-    try {
-        // Validate API key
-        if (!CLAUDE_API_KEY) {
-            return res.status(500).json({ 
-                error: 'Claude API key not configured on server' 
-            });
-        }
-
-        const { messages, userEmail } = req.body;
-        
-        if (!messages || !userEmail) {
-            return res.status(400).json({ 
-                error: 'Missing required fields: messages and userEmail' 
-            });
-        }
-
-        // Check user session limit
-        const userSessionCount = userSessions.get(userEmail) || 0;
-        if (userSessionCount >= MAX_SESSIONS_PER_USER) {
-            return res.status(429).json({ 
-                error: 'Session limit reached. Please reset your session.',
-                remaining: 0,
-                sessionCount: userSessionCount
-            });
-        }
-
-        // Import fetch dynamically (for Node.js compatibility)
-        const fetch = (await import('node-fetch')).default;
-
-        // Call Claude API
-        const response = await fetch('https://api.anthropic.com/v1/messages', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'x-api-key': CLAUDE_API_KEY,
-                'anthropic-version': '2023-06-01'
-            },
-            body: JSON.stringify({
-                model: "claude-3-5-sonnet-20241022",
-                max_tokens: 1000,
-                messages: messages
-            })
-        });
-
-        if (!response.ok) {
-            const errorData = await response.json();
-            console.error('Claude API Error:', errorData);
-            return res.status(response.status).json({ 
-                error: errorData.error?.message || 'Claude API Error' 
-            });
-        }
-
-        const data = await response.json();
-        
-        // Update user session count
-        const newSessionCount = userSessionCount + 1;
-        userSessions.set(userEmail, newSessionCount);
-        
-        console.log(`API call for ${userEmail}: ${newSessionCount}/${MAX_SESSIONS_PER_USER}`);
-        
-        res.json({
-            message: data.content[0]?.text || "Sorry, I couldn't generate a response.",
-            remaining: MAX_SESSIONS_PER_USER - newSessionCount,
-            sessionCount: newSessionCount
-        });
-
-    } catch (error) {
-        console.error('Claude API Error:', error);
-        res.status(500).json({ 
-            error: 'Internal server error',
-            details: process.env.NODE_ENV === 'development' ? error.message : undefined
-        });
-    }
-});
-
-// WhatsApp notification endpoint
-app.post('/api/notify', async (req, res) => {
-    try {
-        if (!WASSENGER_TOKEN) {
-            return res.status(500).json({ 
-                error: 'WhatsApp service not configured' 
-            });
-        }
-
-        const { 
-            type, 
-            userEmail, 
-            userName, 
-            botConfig, 
-            sessionCount, 
-            conversationLength, 
-            prompt 
-        } = req.body;
-
-        const message = type === 'limit_reached' 
-            ? `🤖 FREE AI BOT GENERATOR - LIMIT REACHED
-
-👤 User: ${userName}
-📧 Email: ${userEmail}
-
-🏢 Business: ${botConfig.businessName}
-🎯 Service: ${botConfig.businessType}
-🤖 Bot Name: ${botConfig.botName}
-
-📊 Usage: 50/50 API calls completed
-💬 Total conversations: ${conversationLength}
-
-📝 Generated Prompt Preview:
-${prompt.substring(0, 500)}...
-
-⏰ ${new Date().toLocaleString()}`
-            : `🤖 FREE AI BOT GENERATOR - SUBMISSION
-
-👤 User: ${userName}
-📧 Email: ${userEmail}
-
-🏢 Business: ${botConfig.businessName}
-🎯 Service: ${botConfig.businessType}
-🤖 Bot Name: ${botConfig.botName}
-
-📊 Usage: ${sessionCount}/50 API calls
-💬 Conversations: ${conversationLength}
-
-📝 Generated Prompt Preview:
-${prompt.substring(0, 500)}...
-
-⏰ ${new Date().toLocaleString()}`;
-
-        // Import fetch dynamically
-        const fetch = (await import('node-fetch')).default;
-
-        // Send WhatsApp via Wassenger
-        const whatsappResponse = await fetch('https://api.wassenger.com/v1/messages', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Token': WASSENGER_TOKEN
-            },
-            body: JSON.stringify({
-                phone: WHATSAPP_PHONE,
-                message: message
-            })
-        });
-
-        if (!whatsappResponse.ok) {
-            const errorData = await whatsappResponse.text();
-            console.error('WhatsApp API Error:', errorData);
-            throw new Error('WhatsApp API failed');
-        }
-
-        console.log(`WhatsApp notification sent to ${WHATSAPP_PHONE} for user ${userEmail}`);
-        
-        res.json({ 
-            success: true, 
-            message: 'Notification sent successfully' 
-        });
-
-    } catch (error) {
-        console.error('WhatsApp notification error:', error);
-        res.status(500).json({ 
-            error: 'Failed to send notification',
-            details: process.env.NODE_ENV === 'development' ? error.message : undefined
-        });
-    }
-});
-
-// Get user session info
-app.get('/api/session/:email', (req, res) => {
-    const email = req.params.email;
-    const sessionCount = userSessions.get(email) || 0;
-    
-    res.json({
-        sessionCount,
-        remaining: MAX_SESSIONS_PER_USER - sessionCount,
-        maxSessions: MAX_SESSIONS_PER_USER
-    });
-});
-
-// Reset user session
-app.post('/api/session/reset', (req, res) => {
-    const { userEmail } = req.body;
-    
-    if (!userEmail) {
-        return res.status(400).json({ error: 'userEmail is required' });
-    }
-    
-    userSessions.set(userEmail, 0);
-    console.log(`Session reset for user: ${userEmail}`);
-    
-    res.json({ 
-        success: true, 
-        message: 'Session reset successfully',
-        remaining: MAX_SESSIONS_PER_USER 
-    });
-});
-
-// Admin endpoint to view all sessions (for debugging)
-app.get('/api/admin/sessions', (req, res) => {
-    if (process.env.NODE_ENV !== 'development') {
-        return res.status(403).json({ error: 'Access denied' });
-    }
-    
-    const sessions = Array.from(userSessions.entries()).map(([email, count]) => ({
-        email,
-        sessionCount: count,
-        remaining: MAX_SESSIONS_PER_USER - count
-    }));
-    
-    res.json(sessions);
-});
-
 // Error handling middleware
 app.use((error, req, res, next) => {
-    console.error('Unhandled error:', error);
-    res.status(500).json({ 
-        error: 'Something went wrong!',
-        details: process.env.NODE_ENV === 'development' ? error.message : undefined
-    });
-});
-
-// 404 handler
-app.use((req, res) => {
-    res.status(404).json({ error: 'Endpoint not found' });
+    console.error('Server error:', error);
+    res.status(500).json({ error: 'Internal server error' });
 });
 
 // Start server
-app.listen(PORT, '0.0.0.0', () => {
-    console.log(`🚀 Server running on port ${PORT}`);
-    console.log(`🔐 Environment: ${process.env.NODE_ENV || 'development'}`);
-    console.log(`🤖 Claude API: ${CLAUDE_API_KEY ? 'Configured ✅' : 'Missing ❌'}`);
-    console.log(`📱 WhatsApp: ${WASSENGER_TOKEN ? 'Configured ✅' : 'Missing ❌'}`);
+app.listen(PORT, () => {
+    console.log(`🚀 Sales Bot Generator API running on port ${PORT}`);
+    console.log(`📱 Environment: ${process.env.NODE_ENV || 'development'}`);
+    console.log(`🌐 API Base URL: http://localhost:${PORT}/api`);
+    
+    // Log available endpoints
+    console.log('\n📋 Available API Endpoints:');
+    console.log('GET  /api/health - Health check');
+    console.log('GET  /api/session/:email - Get user session');
+    console.log('POST /api/session - Update user session');
+    console.log('POST /api/chat - AI chat endpoint');
+    console.log('POST /api/submit-bot - Submit bot configuration');
+    console.log('GET  /api/bots - Get all bot submissions');
+    console.log('GET  / - Serve main application\n');
 });
 
-// Graceful shutdown
-process.on('SIGTERM', () => {
-    console.log('SIGTERM received, shutting down gracefully');
-    process.exit(0);
-});
-
-process.on('SIGINT', () => {
-    console.log('SIGINT received, shutting down gracefully');
-    process.exit(0);
-});
+module.exports = app;
