@@ -1,0 +1,452 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sales Bot Generator & Demo - Free AI Tool</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            color: #333;
+        }
+
+        .login-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.8);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+
+        .login-modal {
+            background: white;
+            border-radius: 15px;
+            padding: 40px;
+            text-align: center;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.3);
+            max-width: 400px;
+            width: 90%;
+        }
+
+        .google-login-btn {
+            background: #4285f4;
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            width: 100%;
+            transition: background 0.3s ease;
+        }
+
+        .google-login-btn:hover {
+            background: #3367d6;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+            display: grid;
+            grid-template-columns: 1fr 400px;
+            gap: 30px;
+            min-height: 100vh;
+        }
+
+        .form-section {
+            background: white;
+            border-radius: 15px;
+            padding: 30px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            overflow-y: auto;
+            max-height: 90vh;
+        }
+
+        .demo-section {
+            background: white;
+            border-radius: 15px;
+            padding: 20px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            display: flex;
+            flex-direction: column;
+            position: sticky;
+            top: 20px;
+            height: fit-content;
+            max-height: 90vh;
+        }
+
+        .user-info {
+            background: #e6fffa;
+            border: 2px solid #4fd1c7;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        h1 {
+            color: #4a5568;
+            margin-bottom: 30px;
+            text-align: center;
+            font-size: 2.5em;
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .free-badge {
+            background: linear-gradient(135deg, #48bb78, #38a169);
+            color: white;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 0.9em;
+            font-weight: bold;
+            display: inline-block;
+            margin-bottom: 20px;
+        }
+
+        .security-badge {
+            background: #48bb78;
+            color: white;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 0.8em;
+            display: inline-block;
+            margin: 10px 0;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: #4a5568;
+        }
+
+        input, textarea, select {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e2e8f0;
+            border-radius: 8px;
+            font-size: 14px;
+            transition: border-color 0.3s ease;
+        }
+
+        input:focus, textarea:focus, select:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .generate-btn {
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: transform 0.2s ease;
+            margin: 20px 0;
+            width: 100%;
+        }
+
+        .chat-container {
+            flex: 1;
+            border: 2px solid #e2e8f0;
+            border-radius: 12px;
+            padding: 15px;
+            display: flex;
+            flex-direction: column;
+            min-height: 400px;
+            max-height: 500px;
+            background: #f8fafc;
+        }
+
+        .chat-messages {
+            flex: 1;
+            overflow-y: auto;
+            margin-bottom: 15px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .message {
+            max-width: 80%;
+            padding: 12px 16px;
+            border-radius: 18px;
+            font-size: 14px;
+            line-height: 1.4;
+        }
+
+        .user-message {
+            background: #667eea;
+            color: white;
+            align-self: flex-end;
+            border-bottom-right-radius: 6px;
+        }
+
+        .bot-message {
+            background: white;
+            color: #333;
+            align-self: flex-start;
+            border: 1px solid #e2e8f0;
+            border-bottom-left-radius: 6px;
+        }
+
+        .system-message {
+            background: #fed7d7;
+            color: #c53030;
+            align-self: center;
+            font-style: italic;
+            max-width: 100%;
+            text-align: center;
+        }
+
+        .session-counter {
+            background: #e6fffa;
+            border: 2px solid #4fd1c7;
+            border-radius: 8px;
+            padding: 10px;
+            text-align: center;
+            margin-bottom: 15px;
+        }
+
+        .notification {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: #48bb78;
+            color: white;
+            padding: 15px 20px;
+            border-radius: 8px;
+            z-index: 1001;
+            animation: slideIn 0.3s ease;
+        }
+
+        @keyframes slideIn {
+            from { transform: translateX(100%); }
+            to { transform: translateX(0); }
+        }
+
+        .loading {
+            opacity: 0.6;
+            pointer-events: none;
+        }
+
+        @media (max-width: 1200px) {
+            .container {
+                grid-template-columns: 1fr;
+                gap: 20px;
+            }
+            
+            .demo-section {
+                position: relative;
+                top: 0;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div id="loginOverlay" class="login-overlay">
+        <div class="login-modal">
+            <h2>🚀 Free AI Sales Bot Generator</h2>
+            <p>Login with your Google account to access our free AI-powered sales bot generator. Create and test up to 50 conversations for free!</p>
+            <button class="google-login-btn" onclick="loginWithGoogle()">
+                Continue with Google (Demo)
+            </button>
+            <p style="font-size: 0.8em; margin-top: 15px; color: #666;">
+                Demo mode - Click to continue
+            </p>
+        </div>
+    </div>
+
+    <div class="container" id="mainContainer" style="display: none;">
+        <div class="form-section">
+            <div class="user-info">
+                <div>
+                    <strong id="userName"></strong>
+                    <div style="font-size: 0.9em; color: #666;" id="userEmail"></div>
+                </div>
+                <button onclick="logout()" style="background: #e53e3e; color: white; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer;">Logout</button>
+            </div>
+
+            <h1>🤖 Sales Bot Generator</h1>
+            <div class="free-badge">✨ FREE AI Tool - 50 Test Conversations</div>
+            <div class="security-badge">🔐 Secure - API keys protected on server</div>
+            
+            <form id="botForm">
+                <h2 style="color: #2d3748; margin: 25px 0 15px 0; font-size: 1.4em; border-bottom: 2px solid #e2e8f0; padding-bottom: 8px;">📋 Business Identity</h2>
+                <div class="form-group">
+                    <label for="businessName">Business Name *</label>
+                    <input type="text" id="businessName" placeholder="e.g., Dejourney" required>
+                </div>
+                
+                <div class="form-group">
+                    <label for="businessType">Primary Service/Product *</label>
+                    <input type="text" id="businessType" placeholder="e.g., metaphysics and spiritual services" required>
+                </div>
+                
+                <div class="form-group">
+                    <label for="botName">Bot Name *</label>
+                    <input type="text" id="botName" placeholder="e.g., Lily" required>
+                </div>
+
+                <h2 style="color: #2d3748; margin: 25px 0 15px 0; font-size: 1.4em; border-bottom: 2px solid #e2e8f0; padding-bottom: 8px;">💼 Services & Pricing</h2>
+                <div class="form-group">
+                    <label for="services">Services/Products (one per line) *</label>
+                    <textarea id="services" placeholder="e.g.:
+Hypnotherapy Session - RM350/hour
+Life Coaching - RM200/hour
+Package Deal - RM960 (3 sessions)" required style="min-height: 100px;"></textarea>
+                </div>
+
+                <h2 style="color: #2d3748; margin: 25px 0 15px 0; font-size: 1.4em; border-bottom: 2px solid #e2e8f0; padding-bottom: 8px;">⏰ Operations</h2>
+                <div class="form-group">
+                    <label for="workingHours">Working Hours *</label>
+                    <input type="text" id="workingHours" placeholder="e.g., Monday-Sunday, 10am-8pm" required>
+                </div>
+
+                <button type="button" class="generate-btn" onclick="generateBot()">
+                    🚀 Generate Free AI Sales Bot & Start Testing
+                </button>
+            </form>
+
+            <div id="promptOutput" style="display: none; margin-top: 20px; padding: 20px; background: #f8fafc; border-radius: 8px; border-left: 4px solid #667eea;">
+                <h3>Generated Sales Bot Prompt:</h3>
+                <pre id="generatedPrompt" style="white-space: pre-wrap; font-size: 12px; background: #f7fafc; padding: 15px; border-radius: 6px; overflow-x: auto;"></pre>
+                <button onclick="copyPrompt()" style="background: #48bb78; color: white; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; margin: 5px 5px 0 0;">📋 Copy Prompt</button>
+                <button onclick="submitBot()" style="background: #ed8936; color: white; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; margin: 5px 5px 0 0;">📤 Submit & Get WhatsApp Notification</button>
+            </div>
+        </div>
+
+        <div class="demo-section">
+            <div style="text-align: center; margin-bottom: 20px;">
+                <h3 style="color: #4a5568; margin-bottom: 10px;">🎭 Live AI Bot Testing</h3>
+                <p>Test your generated bot with real AI!</p>
+                <div class="session-counter">
+                    <strong>Free Tests: <span id="sessionCount">0</span> / 50</strong>
+                    <button onclick="resetSession()" style="background: #e53e3e; color: white; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; margin-left: 10px;">Reset</button>
+                </div>
+            </div>
+            
+            <div class="chat-container">
+                <div class="chat-messages" id="chatMessages">
+                    <div class="bot-message">
+                        Welcome! Login and generate your bot to start testing with real AI! 🤖✨
+                    </div>
+                </div>
+                
+                <div style="display: flex; gap: 10px;">
+                    <input type="text" style="flex: 1; padding: 10px 15px; border: 1px solid #e2e8f0; border-radius: 20px; font-size: 14px;" id="chatInput" placeholder="Type your message..." disabled>
+                    <button onclick="sendMessage()" id="sendBtn" disabled style="background: #667eea; color: white; border: none; padding: 10px 20px; border-radius: 20px; cursor: pointer; font-weight: bold;">Send</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Frontend configuration - no API keys here!
+        let currentUser = null;
+        let botConfig = null;
+        let sessionCount = 0;
+        let maxSessions = 50;
+        let conversationHistory = [];
+
+        // Auto-detect API base URL
+        const API_BASE_URL = window.location.origin + '/api';
+
+        function loginWithGoogle() {
+            // Simulate successful login for demo
+            currentUser = {
+                name: 'Demo User',
+                email: `demo_${Date.now()}@example.com`, // Unique email for each session
+                picture: 'https://via.placeholder.com/40'
+            };
+            
+            document.getElementById('loginOverlay').style.display = 'none';
+            document.getElementById('mainContainer').style.display = 'block';
+            
+            document.getElementById('userName').textContent = currentUser.name;
+            document.getElementById('userEmail').textContent = currentUser.email;
+            
+            loadUserSession();
+            showNotification('Successfully logged in! Welcome to the secure AI bot generator.');
+        }
+
+        function logout() {
+            currentUser = null;
+            document.getElementById('loginOverlay').style.display = 'flex';
+            document.getElementById('mainContainer').style.display = 'none';
+            resetChat();
+        }
+
+        async function loadUserSession() {
+            try {
+                const response = await fetch(`${API_BASE_URL}/session/${currentUser.email}`);
+                const data = await response.json();
+                
+                sessionCount = data.sessionCount;
+                updateSessionCounter();
+            } catch (error) {
+                console.error('Failed to load session:', error);
+                showNotification('Failed to load session data', 'error');
+            }
+        }
+
+        function generateBot() {
+            if (!currentUser) {
+                showNotification('Please login first!', 'error');
+                return;
+            }
+
+            // Validate required fields
+            const requiredFields = ['businessName', 'businessType', 'botName', 'services', 'workingHours'];
+            for (let field of requiredFields) {
+                if (!document.getElementById(field).value.trim()) {
+                    showNotification(`Please fill in the ${field} field!`, 'error');
+                    return;
+                }
+            }
+
+            botConfig = {
+                businessName: document.getElementById('businessName').value,
+                businessType: document.getElementById('businessType').value,
+                botName: document.getElementById('botName').value,
+                services: document.getElementById('services').value,
+                workingHours: document.getElementById('workingHours').value,
+                userEmail: currentUser.email,
+                userName: currentUser.name
+            };
+
+            const prompt = generatePrompt(botConfig);
+            document.getElementById('generatedPrompt').textContent = prompt;
+            document.getElementById('promptOutput').style.display = 'block';
+
+            document.getElementById('chatInput').disabled = false;
+            document.getElementById('sendBtn').disabled = false;
