@@ -1,7 +1,6 @@
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
-const fs = require('fs');
 
 const app = express();
 const PORT = process.env.PORT || 10000;
@@ -13,129 +12,275 @@ app.use(express.static('public'));
 
 // In-memory storage (replace with database in production)
 const userSessions = new Map();
+const generatedBots = new Map();
 const botSubmissions = [];
 
-// Mock AI response function (replace with real AI API)
-function generateAIResponse(message, config, history) {
+// Claude API configuration (you'll need to set this in Render environment variables)
+const CLAUDE_API_KEY = process.env.CLAUDE_API_KEY;
+const CLAUDE_API_URL = 'https://api.anthropic.com/v1/messages';
+
+// Generate sophisticated AI bot using Claude API
+async function generateAIBot(formData) {
+    const systemPrompt = `You are an expert sales bot developer. Create a sophisticated sales bot prompt based on the provided business information. The bot should be professional, intelligent, and follow proven sales methodologies.
+
+Create a comprehensive bot prompt that includes:
+1. Professional identity and personality
+2. Conversation flow and stages
+3. Objection handling strategies
+4. Field collection methodology
+5. JSON output format for lead capture
+
+Make it as sophisticated as the "Lily" bot example - professional, goal-oriented, and conversion-focused.
+
+Business Details:
+- Business: ${formData.businessName}
+- Type: ${formData.businessType}
+- Bot Name: ${formData.botName}
+- Goal: ${formData.primaryGoal}
+- Communication Style: ${formData.communicationTone}
+- Language: ${formData.languageSupport}
+- Services: ${formData.services}
+- Discovery Questions: ${formData.discoveryQuestions}
+- Working Hours: ${formData.workingHours}
+- Qualification Criteria: ${formData.qualificationCriteria || 'Standard qualification'}
+- Custom Fields: ${formData.customFields || 'None'}
+
+Create a complete, professional sales bot prompt that will drive ${formData.primaryGoal}.`;
+
+    try {
+        if (!CLAUDE_API_KEY) {
+            console.log('⚠️ Claude API key not configured, using fallback generation');
+            return generateFallbackBot(formData);
+        }
+
+        const response = await fetch(CLAUDE_API_URL, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'x-api-key': CLAUDE_API_KEY,
+                'anthropic-version': '2023-06-01'
+            },
+            body: JSON.stringify({
+                model: 'claude-3-sonnet-20240229',
+                max_tokens: 4000,
+                messages: [{
+                    role: 'user',
+                    content: systemPrompt
+                }]
+            })
+        });
+
+        if (!response.ok) {
+            throw new Error(`Claude API error: ${response.status}`);
+        }
+
+        const data = await response.json();
+        const generatedPrompt = data.content[0].text;
+
+        console.log('✅ Claude API generated sophisticated bot');
+        return {
+            type: 'claude_generated',
+            prompt: generatedPrompt,
+            config: formData
+        };
+
+    } catch (error) {
+        console.error('❌ Claude API error:', error.message);
+        console.log('🔄 Falling back to template generation');
+        return generateFallbackBot(formData);
+    }
+}
+
+// Fallback bot generation if Claude API is not available
+function generateFallbackBot(formData) {
+    const prompt = `## Core Identity
+You are ${formData.botName}, a professional sales consultant for ${formData.businessName}, specializing in ${formData.businessType}. You use consultative selling to understand customer needs and guide them to appropriate solutions.
+
+## Communication Style
+* **Tone**: ${formData.communicationTone}
+* **Language**: ${formData.languageSupport}
+* **Format**: Short, conversational messages (max 3 per response)
+* **Natural flow**: Acknowledge → Understand → Guide → Close
+
+## Primary Objective
+${formData.primaryGoal}
+
+## Conversation Flow
+
+### Step 1: Natural Opening
+- Acknowledge their interest naturally
+- Ask what's prompting them to reach out
+- Always introduce yourself
+
+### Step 2: Discovery & Problem Identification
+- Use consultative questions to understand their specific problem
+- Key questions: ${formData.discoveryQuestions}
+
+### Step 3: Service Matching
+- Present relevant service options based on their problem
+- Services available: ${formData.services}
+
+### Step 4: Information Collection
+- Collect required customer information systematically
+- Working hours: ${formData.workingHours}
+
+### Step 5: Confirmation & Handoff
+- Format confirmation with contact details
+- Explain next steps
+
+Remember: Your goal is to provide excellent customer service while driving ${formData.primaryGoal} for ${formData.businessName}.`;
+
+    return {
+        type: 'template_generated',
+        prompt: prompt,
+        config: formData
+    };
+}
+
+// Generate responses using the created bot
+async function generateBotResponse(message, botData, history) {
+    try {
+        if (botData.type === 'claude_generated' && CLAUDE_API_KEY) {
+            // Use Claude API with the generated bot prompt
+            const conversationPrompt = `${botData.prompt}
+
+Previous conversation:
+${history.map(h => `${h.role}: ${h.content}`).join('\n')}
+
+Customer: ${message}
+
+Respond as the sales bot following your instructions:`;
+
+            const response = await fetch(CLAUDE_API_URL, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'x-api-key': CLAUDE_API_KEY,
+                    'anthropic-version': '2023-06-01'
+                },
+                body: JSON.stringify({
+                    model: 'claude-3-sonnet-20240229',
+                    max_tokens: 1000,
+                    messages: [{
+                        role: 'user',
+                        content: conversationPrompt
+                    }]
+                })
+            });
+
+            if (response.ok) {
+                const data = await response.json();
+                return data.content[0].text;
+            }
+        }
+
+        // Fallback to basic response generation
+        return generateBasicResponse(message, botData.config, history);
+
+    } catch (error) {
+        console.error('Bot response error:', error);
+        return generateBasicResponse(message, botData.config, history);
+    }
+}
+
+// Basic response generation (fallback)
+function generateBasicResponse(message, config, history) {
     const msg = message.toLowerCase();
     const businessName = config.businessName;
     const botName = config.botName.split(' - ')[0] || config.botName;
     const businessType = config.businessType;
-    const services = config.services ? config.services.split('\n').filter(s => s.trim()) : [];
     
-    // First interaction
     if (history.length === 0) {
         return `Hello! I'm ${botName} from ${businessName}. I'm here to help you with our ${businessType}. What's brought you to reach out to us today?`;
     }
     
-    // Greeting responses
-    if (msg.includes('hello') || msg.includes('hi') || msg.includes('hey') || msg === 'hi') {
+    if (msg.includes('hello') || msg.includes('hi') || msg.includes('hey')) {
         return `Hello! It's great to hear from you! I'm ${botName}, and I'm here to help you with everything related to our ${businessType} at ${businessName}. How can I assist you today?`;
     }
     
-    // Service inquiries
-    if (msg.includes('service') || msg.includes('what do you') || msg.includes('offer') || msg.includes('do you have') || msg.includes('what can') || msg.includes('what')) {
-        if (services.length > 0) {
-            let response = `At ${businessName}, we specialize in ${businessType}. Here's what we offer:\n\n`;
-            services.slice(0, 5).forEach(service => {
-                const cleanService = service.replace(/^\*\*.*?\*\*/, '').trim();
-                if (cleanService) {
-                    response += `• ${cleanService}\n`;
-                }
-            });
-            if (services.length > 5) response += '• And more...\n';
-            response += `\nBased on what you've shared, which of these interests you most?`;
-            return response;
-        } else {
-            return `At ${businessName}, we specialize in ${businessType}. I'd be happy to discuss our services with you in detail. What specific area are you most interested in?`;
-        }
+    if (msg.includes('service') || msg.includes('what do you') || msg.includes('offer')) {
+        return `At ${businessName}, we specialize in ${businessType}. I'd be happy to discuss our services with you in detail. What specific area are you most interested in?`;
     }
     
-    // Pricing inquiries
-    if (msg.includes('price') || msg.includes('cost') || msg.includes('how much') || msg.includes('pricing') || msg.includes('fee')) {
-        if (services.length > 0) {
-            let response = `Here are our current rates:\n\n`;
-            const pricedServices = services.filter(s => s.includes('RM') || s.includes('$') || s.includes('USD'));
-            if (pricedServices.length > 0) {
-                pricedServices.slice(0, 6).forEach(service => {
-                    const cleanService = service.replace(/^\*\*.*?\*\*/, '').trim();
-                    if (cleanService) {
-                        response += `• ${cleanService}\n`;
-                    }
-                });
-            } else {
-                response += `I'd be happy to discuss pricing for our ${businessType} services.\n`;
-            }
-            response += `\nTo help me recommend the best option for you, what specific area would you like to focus on?`;
-            return response;
-        } else {
-            return `I'd be happy to discuss our pricing for ${businessType}. To give you the most accurate quote, could you tell me what specific service you're interested in?`;
-        }
-    }
-    
-    // Booking inquiries
-    if (msg.includes('book') || msg.includes('appointment') || msg.includes('schedule') || msg.includes('available') || msg.includes('when')) {
-        return `I'd be happy to help you schedule an appointment! Our working hours are ${config.workingHours || 'Monday-Sunday, 10am-8pm'}.\n\nTo get you set up, I'll need to know:\n• Which service interests you most\n• What specific goals you have\n• Your preferred timing\n\nLet's start - which service caught your attention?`;
-    }
-    
-    // Positive responses
-    if (msg.includes('yes') || msg.includes('sure') || msg.includes('okay') || msg.includes('ok') || msg.includes('interested')) {
-        const lastBotMessage = history.length > 0 ? history[history.length - 1].content : '';
-        
-        if (lastBotMessage.includes('pricing') || lastBotMessage.includes('rates')) {
-            return `Perfect! Let me share more details about our pricing and help you choose the right service. What specific area are you most interested in addressing?`;
-        }
-        
-        if (lastBotMessage.includes('service') || lastBotMessage.includes('offer')) {
-            return `Wonderful! I'd love to match you with the perfect service. Could you tell me more about what specific challenges or goals you're working on?`;
-        }
-        
-        return `Great! I'm excited to help you. To ensure I recommend the best approach for your situation, could you share a bit more about what you're hoping to achieve?`;
-    }
-    
-    // Problem descriptions
-    if (msg.includes('problem') || msg.includes('issue') || msg.includes('challenge') || msg.includes('help') || msg.includes('need') || msg.includes('difficult')) {
-        return `I understand, and you're in the right place. Many of our clients have faced similar challenges. Based on what you've shared, I believe our ${businessType} services could really help.\n\nWould you like me to explain which specific approach might work best for your situation?`;
-    }
-    
-    // Contact inquiries
-    if (msg.includes('where') || msg.includes('location') || msg.includes('address') || msg.includes('contact') || msg.includes('phone')) {
-        return `For specific location and contact details, I'd be happy to provide those once we determine the best service for you.\n\nRight now, I'd love to focus on understanding your needs better. What's the main thing you're hoping to resolve or achieve?`;
-    }
-    
-    // Thank you responses
-    if (msg.includes('thank') || msg.includes('thanks')) {
-        return `You're very welcome! I'm here to help you every step of the way. What else would you like to know about how we can assist you?`;
-    }
-    
-    // Discovery questions
-    if (config.discoveryQuestions && config.discoveryQuestions.trim()) {
-        const discoveryQuestions = config.discoveryQuestions.split('\n').filter(q => q.trim());
-        if (discoveryQuestions.length > 0) {
-            const randomQuestion = discoveryQuestions[Math.floor(Math.random() * discoveryQuestions.length)];
-            const cleanQuestion = randomQuestion.replace(/^-\s*/, '').trim();
-            return `That's really interesting! ${cleanQuestion}`;
-        }
-    }
-    
-    // Default responses
-    const defaultResponses = [
-        `That's really interesting. At ${businessName}, we help people with situations exactly like this through our ${businessType} approach. What outcome would be most valuable for you?`,
-        `I can definitely help with that! Many of our clients start with similar concerns. What would success look like for you in this area?`,
-        `Thank you for sharing that. Our ${businessType} services are designed to address exactly these kinds of situations. What's the most important change you'd want to see?`,
-        `I understand, and I believe we can help. At ${businessName}, we've supported many people through similar challenges. What's driving your interest in finding a solution now?`
-    ];
-    
-    return defaultResponses[Math.floor(Math.random() * defaultResponses.length)];
+    return `That's really interesting! At ${businessName}, we help people with situations exactly like this through our ${businessType} approach. What outcome would be most valuable for you?`;
 }
 
 // API Routes
+
+// Generate AI bot from form data
+app.post('/api/generate-bot', async (req, res) => {
+    try {
+        const formData = req.body;
+        console.log('🚀 Generating AI bot for:', formData.businessName);
+        
+        // Validate required fields
+        const required = ['businessName', 'businessType', 'botName', 'primaryGoal', 'services'];
+        for (const field of required) {
+            if (!formData[field]) {
+                return res.status(400).json({ error: `Missing required field: ${field}` });
+            }
+        }
+        
+        // Generate sophisticated bot using Claude API
+        const botData = await generateAIBot(formData);
+        
+        // Store the generated bot
+        const botId = Date.now().toString();
+        generatedBots.set(botId, botData);
+        
+        console.log(`✅ Generated ${botData.type} bot with ID: ${botId}`);
+        
+        res.json({
+            success: true,
+            botId: botId,
+            botType: botData.type,
+            prompt: botData.prompt,
+            message: `Sophisticated AI bot generated successfully using ${botData.type === 'claude_generated' ? 'Claude API' : 'template'}`
+        });
+        
+    } catch (error) {
+        console.error('Bot generation error:', error);
+        res.status(500).json({ error: 'Failed to generate bot' });
+    }
+});
+
+// Chat with generated bot
+app.post('/api/chat', (req, res) => {
+    try {
+        const { message, botId, history } = req.body;
+        
+        if (!message || !botId) {
+            return res.status(400).json({ error: 'Message and botId are required' });
+        }
+        
+        const botData = generatedBots.get(botId);
+        if (!botData) {
+            return res.status(404).json({ error: 'Bot not found' });
+        }
+        
+        console.log(`💬 Chat request for bot ${botId}:`, message);
+        
+        // Generate response using the sophisticated bot
+        generateBotResponse(message, botData, history || [])
+            .then(response => {
+                console.log('📤 Bot response generated');
+                res.json({ response });
+            })
+            .catch(error => {
+                console.error('Chat error:', error);
+                res.status(500).json({ error: 'Failed to generate response' });
+            });
+        
+    } catch (error) {
+        console.error('Chat error:', error);
+        res.status(500).json({ error: 'Failed to process chat' });
+    }
+});
 
 // Get user session
 app.get('/api/session/:email', (req, res) => {
     const { email } = req.params;
     const session = userSessions.get(email) || { sessionCount: 0 };
-    console.log(`Getting session for ${email}:`, session);
     res.json(session);
 });
 
@@ -143,52 +288,26 @@ app.get('/api/session/:email', (req, res) => {
 app.post('/api/session', (req, res) => {
     const { email, sessionCount } = req.body;
     userSessions.set(email, { sessionCount });
-    console.log(`Updated session for ${email}:`, { sessionCount });
     res.json({ success: true });
 });
 
-// Chat endpoint
-app.post('/api/chat', (req, res) => {
-    try {
-        const { message, config, history } = req.body;
-        console.log('Chat request:', { message, businessName: config?.businessName });
-        
-        if (!message || !config) {
-            return res.status(400).json({ error: 'Message and config are required' });
-        }
-        
-        const response = generateAIResponse(message, config, history || []);
-        console.log('Generated response:', response.substring(0, 100) + '...');
-        
-        res.json({ response });
-    } catch (error) {
-        console.error('Chat error:', error);
-        res.status(500).json({ error: 'Failed to generate response' });
-    }
-});
-
-// Submit bot configuration
+// Submit bot for WhatsApp integration (purchase flow)
 app.post('/api/submit-bot', (req, res) => {
     try {
         const botData = req.body;
         botData.id = Date.now();
         botData.submittedAt = new Date().toISOString();
+        botData.status = 'pending_payment';
         
         botSubmissions.push(botData);
-        console.log('Bot submitted:', { 
+        console.log('💰 Bot submitted for purchase:', { 
             id: botData.id, 
-            businessName: botData.businessName,
-            botName: botData.botName 
+            businessName: botData.businessName 
         });
-        
-        // Here you would typically:
-        // 1. Save to database
-        // 2. Send WhatsApp notification
-        // 3. Process the bot configuration
         
         res.json({ 
             success: true, 
-            message: 'Bot submitted successfully!',
+            message: 'Bot submitted for WhatsApp integration! Payment and setup instructions will be sent.',
             botId: botData.id 
         });
     } catch (error) {
@@ -197,18 +316,33 @@ app.post('/api/submit-bot', (req, res) => {
     }
 });
 
-// Get all bot submissions (admin endpoint)
-app.get('/api/bots', (req, res) => {
-    res.json(botSubmissions);
-});
-
 // Health check
 app.get('/api/health', (req, res) => {
     res.json({ 
         status: 'healthy', 
         timestamp: new Date().toISOString(),
+        claudeApi: CLAUDE_API_KEY ? 'configured' : 'not_configured',
         activeUsers: userSessions.size,
+        generatedBots: generatedBots.size,
         botSubmissions: botSubmissions.length
+    });
+});
+
+// Get bot info
+app.get('/api/bot/:botId', (req, res) => {
+    const { botId } = req.params;
+    const botData = generatedBots.get(botId);
+    
+    if (!botData) {
+        return res.status(404).json({ error: 'Bot not found' });
+    }
+    
+    res.json({
+        botId: botId,
+        type: botData.type,
+        businessName: botData.config.businessName,
+        botName: botData.config.botName,
+        generatedAt: new Date().toISOString()
     });
 });
 
@@ -217,27 +351,18 @@ app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-// Error handling middleware
-app.use((error, req, res, next) => {
-    console.error('Server error:', error);
-    res.status(500).json({ error: 'Internal server error' });
-});
-
 // Start server
 app.listen(PORT, () => {
-    console.log(`🚀 Sales Bot Generator API running on port ${PORT}`);
+    console.log(`🚀 AI Sales Bot Generator running on port ${PORT}`);
+    console.log(`🧠 Claude API: ${CLAUDE_API_KEY ? '✅ Configured' : '❌ Not configured (using fallback)'}`);
     console.log(`📱 Environment: ${process.env.NODE_ENV || 'development'}`);
-    console.log(`🌐 API Base URL: http://localhost:${PORT}/api`);
     
-    // Log available endpoints
     console.log('\n📋 Available API Endpoints:');
+    console.log('POST /api/generate-bot - Generate sophisticated AI bot');
+    console.log('POST /api/chat - Chat with generated bot');
     console.log('GET  /api/health - Health check');
-    console.log('GET  /api/session/:email - Get user session');
-    console.log('POST /api/session - Update user session');
-    console.log('POST /api/chat - AI chat endpoint');
-    console.log('POST /api/submit-bot - Submit bot configuration');
-    console.log('GET  /api/bots - Get all bot submissions');
-    console.log('GET  / - Serve main application\n');
+    console.log('POST /api/submit-bot - Submit for WhatsApp integration');
+    console.log('GET  / - Main application\n');
 });
 
 module.exports = app;
