@@ -58,11 +58,11 @@ Create a complete, professional sales bot prompt that will drive ${formData.prim
             headers: {
                 'Content-Type': 'application/json',
                 'x-api-key': CLAUDE_API_KEY,
-                'anthropic-version': '2023-06-01'
+                'anthropic-version': '2025-05-14'
             },
             body: JSON.stringify({
-                model: 'claude-3-sonnet-20240229',
-                max_tokens: 4000,
+                model: 'claude-sonnet-4-20250514',
+                max_tokens: 8192,
                 messages: [{
                     role: 'user',
                     content: systemPrompt
