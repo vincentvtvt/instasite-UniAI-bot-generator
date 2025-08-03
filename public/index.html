@@ -136,6 +136,28 @@
             margin: 10px 0;
         }
 
+        .backend-status {
+            background: #f0f9ff;
+            border: 2px solid #3b82f6;
+            border-radius: 8px;
+            padding: 10px;
+            margin: 10px 0;
+            font-size: 0.9em;
+            display: none;
+        }
+
+        .backend-status.online {
+            background: #dcfce7;
+            border-color: #16a34a;
+            color: #166534;
+        }
+
+        .backend-status.offline {
+            background: #fef2f2;
+            border-color: #dc2626;
+            color: #991b1b;
+        }
+
         .form-group {
             margin-bottom: 20px;
         }
@@ -300,6 +322,11 @@
             <div class="free-badge">✨ FREE AI Tool - 50 Test Conversations</div>
             <div class="security-badge">🔐 Secure - API keys protected on server</div>
             
+            <!-- Backend Status Indicator -->
+            <div id="backendStatus" class="backend-status">
+                <strong>🔄 Checking backend connection...</strong>
+            </div>
+            
             <form id="botForm">
                 <h2 style="color: #2d3748; margin: 25px 0 15px 0; font-size: 1.4em; border-bottom: 2px solid #e2e8f0; padding-bottom: 8px;">📋 Business Identity</h2>
                 <div class="form-group">
@@ -377,9 +404,193 @@ Package Deal - RM960 (3 sessions)" required style="min-height: 100px;"></textare
         let sessionCount = 0;
         let maxSessions = 50;
         let conversationHistory = [];
+        let backendOnline = false;
 
-        // Auto-detect API base URL
+        // Auto-detect API base URL with debugging
         const API_BASE_URL = window.location.origin + '/api';
+        console.log('🌐 API Base URL:', API_BASE_URL);
+
+        // Test backend connectivity on page load
+        async function testBackendConnection() {
+            try {
+                console.log('🔍 Testing backend connection...');
+                
+                const response = await fetch(`${API_BASE_URL}/health`, {
+                    method: 'GET',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    }
+                });
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    console.log('✅ Backend is ONLINE:', data);
+                    
+                    backendOnline = true;
+                    updateBackendStatus(true, `Backend API Connected - ${data.activeUsers} active users`);
+                    showNotification('Backend API is connected and ready!', 'success');
+                    return true;
+                } else {
+                    throw new Error(`Health check failed: ${response.status}`);
+                }
+            } catch (error) {
+                console.error('❌ Backend connection failed:', error.message);
+                
+                backendOnline = false;
+                updateBackendStatus(false, 'Backend API offline - using frontend fallback');
+                showNotification('Backend API not responding - using frontend fallback', 'error');
+                return false;
+            }
+        }
+
+        function updateBackendStatus(online, message) {
+            const statusElement = document.getElementById('backendStatus');
+            statusElement.style.display = 'block';
+            statusElement.className = `backend-status ${online ? 'online' : 'offline'}`;
+            statusElement.innerHTML = `<strong>${online ? '✅' : '❌'} ${message}</strong>`;
+        }
+
+        async function getAIResponse(message, config, history) {
+            try {
+                console.log('🔄 Making API call to:', `${API_BASE_URL}/chat`);
+                
+                const response = await fetch(`${API_BASE_URL}/chat`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        message: message,
+                        config: config,
+                        history: history
+                    })
+                });
+
+                console.log('📡 API Response Status:', response.status);
+
+                if (!response.ok) {
+                    throw new Error(`API Error: ${response.status} - ${response.statusText}`);
+                }
+
+                const data = await response.json();
+                console.log('✅ API Success - Response received:', data.response?.substring(0, 100) + '...');
+                
+                // Add a marker to show this came from the API
+                return `🌐 ${data.response}`;
+                
+            } catch (error) {
+                console.error('❌ API Error:', error.message);
+                console.log('🔄 Falling back to local generation...');
+                
+                // Fallback to local generation if API fails
+                const fallbackResponse = generateIntelligentResponse(message, config, history);
+                return `💻 ${fallbackResponse}`;
+            }
+        }
+
+        // Local fallback response generation
+        function generateIntelligentResponse(message, config, history) {
+            const msg = message.toLowerCase();
+            const businessName = config.businessName;
+            const botName = config.botName;
+            const businessType = config.businessType;
+            const services = config.services ? config.services.split('\n').filter(s => s.trim()) : [];
+            
+            // First interaction
+            if (history.length === 0) {
+                return `Hello! I'm ${botName} from ${businessName}. I'm here to help you with our ${businessType}. What's brought you to reach out to us today?`;
+            }
+            
+            // Greeting responses
+            if (msg.includes('hello') || msg.includes('hi') || msg.includes('hey') || msg === 'hi') {
+                return `Hello! It's great to hear from you! I'm ${botName}, and I'm here to help you with everything related to our ${businessType} at ${businessName}. How can I assist you today?`;
+            }
+            
+            // Service inquiries
+            if (msg.includes('service') || msg.includes('what do you') || msg.includes('offer') || msg.includes('do you have') || msg.includes('what can') || msg.includes('what')) {
+                if (services.length > 0) {
+                    let response = `At ${businessName}, we specialize in ${businessType}. Here's what we offer:\n\n`;
+                    services.slice(0, 5).forEach(service => {
+                        const cleanService = service.replace(/^\*\*.*?\*\*/, '').trim();
+                        if (cleanService) {
+                            response += `• ${cleanService}\n`;
+                        }
+                    });
+                    if (services.length > 5) response += '• And more...\n';
+                    response += `\nBased on what you've shared, which of these interests you most?`;
+                    return response;
+                } else {
+                    return `At ${businessName}, we specialize in ${businessType}. I'd be happy to discuss our services with you in detail. What specific area are you most interested in?`;
+                }
+            }
+            
+            // Pricing inquiries
+            if (msg.includes('price') || msg.includes('cost') || msg.includes('how much') || msg.includes('pricing') || msg.includes('fee')) {
+                if (services.length > 0) {
+                    let response = `Here are our current rates:\n\n`;
+                    const pricedServices = services.filter(s => s.includes('RM') || s.includes('$') || s.includes('USD'));
+                    if (pricedServices.length > 0) {
+                        pricedServices.slice(0, 6).forEach(service => {
+                            const cleanService = service.replace(/^\*\*.*?\*\*/, '').trim();
+                            if (cleanService) {
+                                response += `• ${cleanService}\n`;
+                            }
+                        });
+                    } else {
+                        response += `I'd be happy to discuss pricing for our ${businessType} services.\n`;
+                    }
+                    response += `\nTo help me recommend the best option for you, what specific area would you like to focus on?`;
+                    return response;
+                } else {
+                    return `I'd be happy to discuss our pricing for ${businessType}. To give you the most accurate quote, could you tell me what specific service you're interested in?`;
+                }
+            }
+            
+            // Booking inquiries
+            if (msg.includes('book') || msg.includes('appointment') || msg.includes('schedule') || msg.includes('available') || msg.includes('when')) {
+                return `I'd be happy to help you schedule an appointment! Our working hours are ${config.workingHours || 'Monday-Sunday, 10am-8pm'}.\n\nTo get you set up, I'll need to know:\n• Which service interests you most\n• What specific goals you have\n• Your preferred timing\n\nLet's start - which service caught your attention?`;
+            }
+            
+            // Positive responses
+            if (msg.includes('yes') || msg.includes('sure') || msg.includes('okay') || msg.includes('ok') || msg.includes('interested')) {
+                const lastBotMessage = history.length > 0 ? history[history.length - 1].content : '';
+                
+                if (lastBotMessage.includes('pricing') || lastBotMessage.includes('rates')) {
+                    return `Perfect! Let me share more details about our pricing and help you choose the right service. What specific area are you most interested in addressing?`;
+                }
+                
+                if (lastBotMessage.includes('service') || lastBotMessage.includes('offer')) {
+                    return `Wonderful! I'd love to match you with the perfect service. Could you tell me more about what specific challenges or goals you're working on?`;
+                }
+                
+                return `Great! I'm excited to help you. To ensure I recommend the best approach for your situation, could you share a bit more about what you're hoping to achieve?`;
+            }
+            
+            // Problem descriptions
+            if (msg.includes('problem') || msg.includes('issue') || msg.includes('challenge') || msg.includes('help') || msg.includes('need') || msg.includes('difficult')) {
+                return `I understand, and you're in the right place. Many of our clients have faced similar challenges. Based on what you've shared, I believe our ${businessType} services could really help.\n\nWould you like me to explain which specific approach might work best for your situation?`;
+            }
+            
+            // Contact inquiries
+            if (msg.includes('where') || msg.includes('location') || msg.includes('address') || msg.includes('contact') || msg.includes('phone')) {
+                return `For specific location and contact details, I'd be happy to provide those once we determine the best service for you.\n\nRight now, I'd love to focus on understanding your needs better. What's the main thing you're hoping to resolve or achieve?`;
+            }
+            
+            // Thank you responses
+            if (msg.includes('thank') || msg.includes('thanks')) {
+                return `You're very welcome! I'm here to help you every step of the way. What else would you like to know about how we can assist you?`;
+            }
+            
+            // Default responses
+            const defaultResponses = [
+                `That's really interesting. At ${businessName}, we help people with situations exactly like this through our ${businessType} approach. What outcome would be most valuable for you?`,
+                `I can definitely help with that! Many of our clients start with similar concerns. What would success look like for you in this area?`,
+                `Thank you for sharing that. Our ${businessType} services are designed to address exactly these kinds of situations. What's the most important change you'd want to see?`,
+                `I understand, and I believe we can help. At ${businessName}, we've supported many people through similar challenges. What's driving your interest in finding a solution now?`
+            ];
+            
+            return defaultResponses[Math.floor(Math.random() * defaultResponses.length)];
+        }
 
         function loginWithGoogle() {
             // Simulate successful login for demo
@@ -415,7 +626,8 @@ Package Deal - RM960 (3 sessions)" required style="min-height: 100px;"></textare
                 updateSessionCounter();
             } catch (error) {
                 console.error('Failed to load session:', error);
-                showNotification('Failed to load session data', 'error');
+                sessionCount = 0;
+                updateSessionCounter();
             }
         }
 
@@ -450,3 +662,242 @@ Package Deal - RM960 (3 sessions)" required style="min-height: 100px;"></textare
 
             document.getElementById('chatInput').disabled = false;
             document.getElementById('sendBtn').disabled = false;
+
+            resetChat();
+            addMessage('bot', `Hi! I'm ${botConfig.botName} from ${botConfig.businessName}. I'm ready to help you with our ${botConfig.businessType}! How can I assist you today?`);
+
+            showNotification('Sales bot generated successfully! Start testing with AI.');
+        }
+
+        function generatePrompt(config) {
+            return `You are ${config.botName}, a friendly and professional sales assistant for ${config.businessName}, specializing in ${config.businessType}.
+
+Your role:
+- Help customers understand our services and pricing
+- Guide them through the booking process
+- Answer questions professionally and warmly
+- Always aim to convert inquiries into bookings
+
+Our services and pricing:
+${config.services}
+
+Working hours: ${config.workingHours}
+
+Guidelines:
+1. Always greet customers warmly and introduce yourself
+2. Listen carefully to their needs and match them with appropriate services
+3. Provide clear pricing information when asked
+4. Encourage bookings by highlighting benefits
+5. If asked about availability, mention our working hours
+6. Keep responses conversational but professional
+7. If you don't know something, offer to connect them with a human team member
+
+Remember: Your goal is to provide excellent customer service while driving sales for ${config.businessName}.`;
+        }
+
+        async function sendMessage() {
+            if (!currentUser) {
+                showNotification('Please login first!', 'error');
+                return;
+            }
+
+            if (sessionCount >= maxSessions) {
+                showNotification('You have reached the maximum of 50 free test conversations!', 'error');
+                return;
+            }
+
+            const input = document.getElementById('chatInput');
+            const message = input.value.trim();
+            
+            if (!message || !botConfig) return;
+
+            // Add user message
+            addMessage('user', message);
+            input.value = '';
+
+            // Add conversation to history
+            conversationHistory.push({role: 'user', content: message});
+
+            // Show typing indicator
+            const typingId = addMessage('bot', 'Typing...', true);
+
+            try {
+                // Get AI response with conversation context
+                const response = await getAIResponse(message, botConfig, conversationHistory);
+                
+                setTimeout(() => {
+                    removeMessage(typingId);
+                    addMessage('bot', response);
+                    conversationHistory.push({role: 'assistant', content: response});
+                    
+                    // Increment session count
+                    sessionCount++;
+                    updateSessionCounter();
+                    updateUserSession();
+                    
+                    // Show API status in console
+                    console.log(`Message ${sessionCount}: Using ${response.includes('🌐') ? 'Backend API' : 'Frontend Fallback'}`);
+                }, 800 + Math.random() * 1200);
+
+            } catch (error) {
+                removeMessage(typingId);
+                addMessage('system', 'Sorry, there was an error processing your message. Please try again.');
+                console.error('Chat error:', error);
+            }
+        }
+
+        function addMessage(type, content, isTemp = false) {
+            const chatMessages = document.getElementById('chatMessages');
+            const messageDiv = document.createElement('div');
+            const messageId = 'msg_' + Date.now() + '_' + Math.random();
+            
+            messageDiv.id = messageId;
+            messageDiv.className = `message ${type}-message`;
+            
+            if (content && content.length > 0) {
+                messageDiv.innerHTML = content.replace(/\n/g, '<br>');
+            } else {
+                messageDiv.textContent = 'Message error - please try again';
+            }
+            
+            if (isTemp) {
+                messageDiv.style.opacity = '0.7';
+                messageDiv.style.fontStyle = 'italic';
+            }
+            
+            chatMessages.appendChild(messageDiv);
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+            
+            return messageId;
+        }
+
+        function removeMessage(messageId) {
+            const message = document.getElementById(messageId);
+            if (message) message.remove();
+        }
+
+        function resetChat() {
+            const chatMessages = document.getElementById('chatMessages');
+            chatMessages.innerHTML = '';
+            conversationHistory = [];
+            
+            if (botConfig && currentUser) {
+                addMessage('bot', `Hi! I'm ${botConfig.botName} from ${botConfig.businessName}. I'm ready to help you with our ${botConfig.businessType}! How can I assist you today?`);
+            } else {
+                addMessage('bot', 'Welcome! Login and generate your bot to start testing with real AI! 🤖✨');
+            }
+        }
+
+        function resetSession() {
+            if (!currentUser) return;
+            
+            if (confirm('Are you sure you want to reset your session count?')) {
+                sessionCount = 0;
+                updateSessionCounter();
+                updateUserSession();
+                resetChat();
+                showNotification('Session reset successfully!');
+            }
+        }
+
+        function updateSessionCounter() {
+            document.getElementById('sessionCount').textContent = sessionCount;
+        }
+
+        async function updateUserSession() {
+            if (!currentUser) return;
+            
+            try {
+                await fetch(`${API_BASE_URL}/session`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        email: currentUser.email,
+                        sessionCount: sessionCount
+                    })
+                });
+            } catch (error) {
+                console.error('Failed to update session:', error);
+            }
+        }
+
+        function copyPrompt() {
+            const prompt = document.getElementById('generatedPrompt').textContent;
+            navigator.clipboard.writeText(prompt).then(() => {
+                showNotification('Prompt copied to clipboard!');
+            }).catch(() => {
+                showNotification('Failed to copy prompt', 'error');
+            });
+        }
+
+        async function submitBot() {
+            if (!botConfig) {
+                showNotification('Please generate a bot first!', 'error');
+                return;
+            }
+
+            const submitData = {
+                ...botConfig,
+                prompt: document.getElementById('generatedPrompt').textContent,
+                timestamp: new Date().toISOString()
+            };
+
+            try {
+                const response = await fetch(`${API_BASE_URL}/submit-bot`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(submitData)
+                });
+
+                if (response.ok) {
+                    showNotification('Bot submitted successfully! You will receive a WhatsApp notification.');
+                } else {
+                    showNotification('Failed to submit bot. Please try again.', 'error');
+                }
+            } catch (error) {
+                console.error('Submit error:', error);
+                showNotification('Failed to submit bot. Please try again.', 'error');
+            }
+        }
+
+        function showNotification(message, type = 'success') {
+            const notification = document.createElement('div');
+            notification.className = 'notification';
+            notification.textContent = message;
+            
+            if (type === 'error') {
+                notification.style.background = '#e53e3e';
+            }
+            
+            document.body.appendChild(notification);
+            
+            setTimeout(() => {
+                if (document.body.contains(notification)) {
+                    document.body.removeChild(notification);
+                }
+            }, 4000);
+        }
+
+        // Enable Enter key for chat input
+        document.getElementById('chatInput').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                sendMessage();
+            }
+        });
+
+        // Initialize the page
+        document.addEventListener('DOMContentLoaded', function() {
+            resetChat();
+            
+            // Test backend connection after a short delay
+            setTimeout(() => {
+                testBackendConnection();
+            }, 1000);
+        });
+    </script>
+</body>
+</html>
